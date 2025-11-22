@@ -1,0 +1,49 @@
+{
+  "name": "kaggle-ops",
+  "image": "gcr.io/kaggle-images/python:latest",
+  "workspaceFolder": "/workspace",
+  "containerEnv": {
+    "TZ": "Asia/Tokyo",
+    "UV_PROJECT_ENVIRONMENT": "/usr/local/",
+    "CLOUDSDK_CONFIG": "$HOME/.config/gcloud"
+  },
+  "remoteEnv": {
+    "PYTHONPATH": "/workspace:${PYTHONPATH}"
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated"
+  ],
+  "runArgs": ["--shm-size=8gb", "--env-file=.env"],
+  "features": {
+    "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
+    "ghcr.io/devcontainers/features/terraform:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": {
+    "gpu": "optional"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "ms-python.python",
+        "njpwerner.autodocstring",
+        "KevinRose.vsc-python-indent",
+        "charliermarsh.ruff",
+        "mhutchie.git-graph",
+        "ms-python.mypy-type-checker",
+        "ms-toolsai.jupyter",
+        "janisdd.vscode-edit-csv",
+        "GitHub.copilot",
+        "samuelcolvin.jinjahtml",
+        "ms-azuretools.vscode-docker",
+        "tamasfe.even-better-toml",
+        "openai.chatgpt",
+        "Anthropic.claude-code",
+        "hashicorp.terraform"
+      ]
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
+}

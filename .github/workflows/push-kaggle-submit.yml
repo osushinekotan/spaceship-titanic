@@ -1,0 +1,149 @@
+name: Push Artifacts and Submit to Kaggle
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  push-and-submit:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system tyro python-dotenv pydantic kaggle nbformat pydantic-settings
+
+      - name: Check if requirements.txt changed
+        id: check_deps
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Skipping requirements.txt check for manual workflow dispatch"
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            if git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep -q "codes/deps/requirements.txt"; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "requirements.txt has changed"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "requirements.txt has not changed"
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push dependencies to Kaggle
+        if: steps.check_deps.outputs.changed == 'true'
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_COMPETITION_NAME: ${{ secrets.KAGGLE_COMPETITION_NAME }}
+          UV_SYSTEM_PYTHON: 1
+        run: make push-deps
+
+      - name: Set Container URI
+        id: container
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          REGION: ${{ secrets.REGION }}
+          KAGGLE_COMPETITION_NAME: ${{ secrets.KAGGLE_COMPETITION_NAME }}
+        run: |
+          CONTAINER_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/kaggle-competition-artifacts/${KAGGLE_COMPETITION_NAME}:latest"
+          echo "container_uri=${CONTAINER_URI}" >> $GITHUB_OUTPUT
+          echo "Container URI: ${CONTAINER_URI}"
+
+      - name: Parse Experiment Names
+        id: parse_exp_names
+        run: |
+          EXP_NAMES=$(python -m src.kaggle_ops.parse_exp_names)
+          echo "exp_names=${EXP_NAMES}" >> $GITHUB_OUTPUT
+          echo "Experiment names: ${EXP_NAMES}"
+
+      - name: Push Artifacts via Vertex AI and Wait
+        id: push_artifacts
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 60
+          max_attempts: 3
+          retry_wait_seconds: 120
+          shell: bash
+          command: |
+            echo "Pushing artifacts via Vertex AI Custom Job..."
+            echo "Container URI: ${{ steps.container.outputs.container_uri }}"
+            echo "Experiment names: ${{ steps.parse_exp_names.outputs.exp_names }}"
+
+            # Generate config file from template
+            export CONTAINER_URI_LATEST=${{ steps.container.outputs.container_uri }} \
+              BUCKET_NAME=${{ secrets.BUCKET_NAME }} \
+              KAGGLE_USERNAME=${{ secrets.KAGGLE_USERNAME }} \
+              KAGGLE_KEY=${{ secrets.KAGGLE_KEY }} \
+              KAGGLE_COMPETITION_NAME=${{ secrets.KAGGLE_COMPETITION_NAME }} \
+              EXP_NAMES="${{ steps.parse_exp_names.outputs.exp_names }}"
+            envsubst < configs/vertex/push-artifacts-job.yaml > /tmp/vertex-push-artifacts-job.yaml
+
+            # Create job and capture job ID
+            JOB_ID=$(gcloud ai custom-jobs create \
+              --project=${{ secrets.PROJECT_ID }} \
+              --region=${{ secrets.REGION }} \
+              --display-name="kaggle-push-artifacts-$(date +%Y%m%d-%H%M%S)" \
+              --config=/tmp/vertex-push-artifacts-job.yaml \
+              --format="value(name)")
+
+            if [ -z "${JOB_ID}" ]; then
+              echo "ERROR: Failed to create Vertex AI job"
+              exit 1
+            fi
+
+            echo "Created Vertex AI job: ${JOB_ID}"
+            echo "job_id=${JOB_ID}" >> $GITHUB_OUTPUT
+
+            # Wait for the job to complete
+            echo "Waiting for Vertex AI job to complete..."
+            ./scripts/wait_for_vertex_job.sh \
+              "${JOB_ID}" \
+              "${{ secrets.PROJECT_ID }}" \
+              "${{ secrets.REGION }}"
+            sleep 60
+
+      - name: Push Code to Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_COMPETITION_NAME: ${{ secrets.KAGGLE_COMPETITION_NAME }}
+        run: |
+          echo "Pushing code to Kaggle..."
+          python -m src.kaggle_ops.upload codes --settings.run-env local
+
+      - name: Submit to Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          export KAGGLE_USERNAME=${KAGGLE_USERNAME} KAGGLE_KEY=${KAGGLE_KEY}
+          echo "Submitting to Kaggle..."
+          cd codes/submission && kaggle k push
