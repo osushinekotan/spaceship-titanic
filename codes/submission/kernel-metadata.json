@@ -11,5 +11,7 @@
   "dataset_sources": ["mst8823/spaceship-titanic-codes"],
   "competition_sources": ["spaceship-titanic"],
   "kernel_sources": ["mst8823/spaceship-titanic-deps"],
-  "model_sources": []
+  "model_sources": [
+    "mst8823/spaceship-titanic-artifacts/other/spaceship-titanic/1"
+  ]
 }
