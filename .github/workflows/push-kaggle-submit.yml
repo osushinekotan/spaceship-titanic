@@ -37,7 +37,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv pip install --system tyro python-dotenv pydantic python-dateutil kaggle nbformat pydantic-settings
+        run: uv pip install --system tyro python-dotenv pydantic python-dateutil kaggle==1.7.4.5 nbformat pydantic-settings
 
       - name: Check if requirements.txt changed
         id: check_deps
