@@ -32,8 +32,9 @@ jobs:
       - name: Run ruff format
         run: ruff format --check --diff
 
-      # - name: Run mypy
-      #   run: mypy .
+      - name: Run mypy
+        run: mypy .
+        continue-on-error: true
 
       - name: Run pytest
         run: pytest
