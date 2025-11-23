@@ -33,6 +33,8 @@ IGNORE_PATTERNS = [
     "cloudbuild.yaml",
     "Makefile",
     "Dockerfile",
+    "gha-creds-*",  # for github actions
+    "codes",
 ]
 
 
