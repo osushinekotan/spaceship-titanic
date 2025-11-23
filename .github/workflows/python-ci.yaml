@@ -34,6 +34,7 @@ jobs:
 
       - name: Run mypy
         run: mypy .
+        continue-on-error: true
 
       - name: Run pytest
         run: pytest

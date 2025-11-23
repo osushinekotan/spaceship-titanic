@@ -37,7 +37,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv pip install --system tyro python-dotenv pydantic kaggle nbformat pydantic-settings
+        run: uv pip install --system tyro python-dotenv pydantic python-dateutil kaggle==1.7.4.5 nbformat pydantic-settings
 
       - name: Check if requirements.txt changed
         id: check_deps
@@ -137,7 +137,13 @@ jobs:
           KAGGLE_COMPETITION_NAME: ${{ secrets.KAGGLE_COMPETITION_NAME }}
         run: |
           echo "Pushing code to Kaggle..."
+          export KAGGLE_USERNAME=${KAGGLE_USERNAME} KAGGLE_KEY=${KAGGLE_KEY}
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            echo "ERROR: Kaggle credentials not set"
+            exit 1
+          fi
           python -m src.kaggle_ops.upload codes --settings.run-env local
+          sleep 60
 
       - name: Submit to Kaggle
         env:
@@ -146,4 +152,7 @@ jobs:
         run: |
           export KAGGLE_USERNAME=${KAGGLE_USERNAME} KAGGLE_KEY=${KAGGLE_KEY}
           echo "Submitting to Kaggle..."
+          echo "=== kernel-metadata.json contents ==="
+          cat codes/submission/kernel-metadata.json
+          echo "==================================="
           cd codes/submission && kaggle k push
