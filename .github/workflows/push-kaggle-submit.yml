@@ -143,6 +143,7 @@ jobs:
             exit 1
           fi
           python -m src.kaggle_ops.upload codes --settings.run-env local
+          sleep 60
 
       - name: Submit to Kaggle
         env:
